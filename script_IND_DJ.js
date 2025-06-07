@@ -150,7 +150,7 @@ async function initPage() {
         iframe.width      = "100%";
         iframe.height     = "60";
         iframe.frameBorder= "0";
-        iframe.allow      = "autoplay";
+        iframe.setAttribute("allow", "autoplay");
         iframe.src = "https://www.mixcloud.com/widget/iframe/?" +
                      "hide_cover=1&light=1&feed=" +
                      encodeURIComponent(url);
