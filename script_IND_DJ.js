@@ -20,7 +20,7 @@ function showError() {
 }
 function createGoogleCalLink(title, s, e) {
   if (!s||!e) return "#";
-  const fmt = dt=>new Date(dt).toISOString().replace(/-|:|\.\d{3}/g,'');
+  const fmt = dt=>new Date(dt).toISOString().replace(/-|:|.\d{3}/g,'');
   return `https://www.google.com/calendar/render?action=TEMPLATE`
        + `&text=${encodeURIComponent(title)}`
        + `&dates=${fmt(s)}/${fmt(e)}`;
@@ -31,7 +31,7 @@ async function initPage() {
   const artistId = params.get("id");
   if (!artistId) return showNotFound();
 
-  // 1) Fetch artist (unchanged)
+  // 1) Fetch artist
   let artist;
   try {
     const r = await fetch(
@@ -50,7 +50,7 @@ async function initPage() {
     return showError();
   }
 
-  // 2) Must have WEBSITE tag (unchanged)
+  // 2) Must have WEBSITE tag
   const tags = Array.isArray(artist.tags)
     ? artist.tags.map(t=>String(t).toLowerCase())
     : [];
@@ -58,10 +58,10 @@ async function initPage() {
     return showNotFound();
   }
 
-  // 3) Name (unchanged)
+  // 3) Name
   document.getElementById("dj-name").textContent = artist.name || "";
 
-  // 4) Bio/Description (unchanged)
+  // 4) Bio/Description
   const bioEl = document.getElementById("dj-bio");
   let raw = null;
   for (const k of ["description","descriptionHtml","bio","bioHtml"]) {
@@ -83,12 +83,12 @@ async function initPage() {
   }
   bioEl.innerHTML = bioHtml || `<p>No bio available.</p>`;
 
-  // 5) Artwork (unchanged)
+  // 5) Artwork
   const art = document.getElementById("dj-artwork");
   art.src = artist.logo?.["512x512"]||artist.logo?.default||artist.avatar||FALLBACK_ART;
   art.alt = artist.name||"";
 
-  // 6) Social links (unchanged)
+  // 6) Social links
   const sl = document.getElementById("social-links");
   sl.innerHTML = "";
   for (const [plat,url] of Object.entries(artist.socials||{})) {
@@ -101,7 +101,7 @@ async function initPage() {
     sl.appendChild(li);
   }
 
-  // 7) Add to Calendar button (unchanged)
+  // 7) Add to Calendar button
   const calBtn = document.getElementById("calendar-btn");
   calBtn.disabled = true;
   calBtn.onclick  = null;
@@ -142,15 +142,22 @@ async function initPage() {
       const res = await fetch(`get_archives.php?artistId=${encodeURIComponent(artistId)}`);
       if (!res.ok) throw new Error(`Load archives ${res.status}`);
       const archives = await res.json();
+
       archives.forEach(({url}, idx) => {
         const wrapper = document.createElement("div");
         wrapper.className = "mix-show";
 
         const iframe = document.createElement("iframe");
-        iframe.width      = "100%";
-        iframe.height     = "60";
-        iframe.frameBorder= "0";
+        iframe.width       = "100%";
+        iframe.height      = "60";
+        iframe.frameBorder = "0";
+        // Firefox fix: inline styles + sandbox
         iframe.setAttribute("allow", "autoplay");
+        iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
+        iframe.style.display         = "block";
+        iframe.style.visibility      = "visible";
+        iframe.style.minHeight       = "60px";
+        iframe.style.backgroundColor = "transparent";
         iframe.src = "https://www.mixcloud.com/widget/iframe/?" +
                      "hide_cover=1&light=1&feed=" +
                      encodeURIComponent(url);
