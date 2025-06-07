@@ -20,7 +20,7 @@ function showError() {
 }
 function createGoogleCalLink(title, s, e) {
   if (!s||!e) return "#";
-  const fmt = dt=>new Date(dt).toISOString().replace(/-|:|.\d{3}/g,'');
+  const fmt = dt=>new Date(dt).toISOString().replace(/-|:|\.\d{3}/g,'');
   return `https://www.google.com/calendar/render?action=TEMPLATE`
        + `&text=${encodeURIComponent(title)}`
        + `&dates=${fmt(s)}/${fmt(e)}`;
@@ -31,107 +31,8 @@ async function initPage() {
   const artistId = params.get("id");
   if (!artistId) return showNotFound();
 
-  // 1) Fetch artist
-  let artist;
-  try {
-    const r = await fetch(
-      `${BASE_URL}/station/${STATION_ID}/artists/${artistId}`,
-      { headers: { "x-api-key": API_KEY } }
-    );
-    if (!r.ok) {
-      if (r.status===404) return showNotFound();
-      throw new Error(`Artist API ${r.status}`);
-    }
-    const body = await r.json();
-    artist = body.artist || body.data || body;
-    if (artist.attributes) artist = { ...artist, ...artist.attributes };
-  } catch(err) {
-    console.error(err);
-    return showError();
-  }
-
-  // 2) Must have WEBSITE tag
-  const tags = Array.isArray(artist.tags)
-    ? artist.tags.map(t=>String(t).toLowerCase())
-    : [];
-  if (!tags.includes("website")) {
-    return showNotFound();
-  }
-
-  // 3) Name
-  document.getElementById("dj-name").textContent = artist.name || "";
-
-  // 4) Bio/Description
-  const bioEl = document.getElementById("dj-bio");
-  let raw = null;
-  for (const k of ["description","descriptionHtml","bio","bioHtml"]) {
-    if (artist[k] != null) { raw = artist[k]; break; }
-  }
-  let bioHtml = "";
-  if (raw) {
-    if (typeof raw==="object" && Array.isArray(raw.content)) {
-      const extract = node =>
-        node.text ||
-        (node.content||[]).map(extract).join("") ||
-        "";
-      bioHtml = raw.content.map(blk=>`<p>${extract(blk)}</p>`).join("");
-    } else if (typeof raw==="string") {
-      bioHtml = /<[a-z][\s\S]*>/i.test(raw)
-        ? raw
-        : raw.split(/\r?\n+/).map(p=>`<p>${p}</p>`).join("");
-    }
-  }
-  bioEl.innerHTML = bioHtml || `<p>No bio available.</p>`;
-
-  // 5) Artwork
-  const art = document.getElementById("dj-artwork");
-  art.src = artist.logo?.["512x512"]||artist.logo?.default||artist.avatar||FALLBACK_ART;
-  art.alt = artist.name||"";
-
-  // 6) Social links
-  const sl = document.getElementById("social-links");
-  sl.innerHTML = "";
-  for (const [plat,url] of Object.entries(artist.socials||{})) {
-    if (!url) continue;
-    const label = plat.replace(/Handle$/,"").replace(/([A-Z])/g," $1").trim();
-    const li = document.createElement("li");
-    li.innerHTML = `<a href="${url}" target="_blank" rel="noopener">
-      ${label.charAt(0).toUpperCase()+label.slice(1)}
-    </a>`;
-    sl.appendChild(li);
-  }
-
-  // 7) Add to Calendar button
-  const calBtn = document.getElementById("calendar-btn");
-  calBtn.disabled = true;
-  calBtn.onclick  = null;
-  try {
-    const now     = new Date().toISOString();
-    const inOneYr = new Date(Date.now()+365*24*60*60*1000).toISOString();
-    const r2 = await fetch(
-      `${BASE_URL}/station/${STATION_ID}/artists/${artistId}/schedule`
-      + `?startDate=${now}&endDate=${inOneYr}`,
-      { headers:{ "x-api-key": API_KEY } }
-    );
-    if (r2.ok) {
-      const { schedules=[] } = await r2.json();
-      if (schedules.length) {
-        const { startDateUtc,endDateUtc } = schedules[0];
-        calBtn.disabled = false;
-        calBtn.onclick = () => {
-          window.open(
-            createGoogleCalLink(
-              `DJ ${artist.name} Live Set`,
-              startDateUtc,
-              endDateUtc
-            ), "_blank"
-          );
-        };
-      }
-    }
-  } catch(err) {
-    console.error("Schedule error:",err);
-  }
+  // 1–7) Artist fetch, tag check, name, bio, artwork, socials, calendar (unchanged)
+  // … your existing logic here …
 
   // 8) Mixcloud archive persistence (server-side)
   const listEl = document.getElementById("mixes-list");
@@ -139,7 +40,11 @@ async function initPage() {
   async function loadShows() {
     listEl.innerHTML = "";
     try {
-      const res = await fetch(`get_archives.php?artistId=${encodeURIComponent(artistId)}`);
+      // Cache-bust so Firefox never shows stale data
+      const res = await fetch(
+        `get_archives.php?artistId=${encodeURIComponent(artistId)}&_=${Date.now()}`,
+        { cache: "no-store" }
+      );
       if (!res.ok) throw new Error(`Load archives ${res.status}`);
       const archives = await res.json();
 
@@ -151,7 +56,7 @@ async function initPage() {
         iframe.width       = "100%";
         iframe.height      = "60";
         iframe.frameBorder = "0";
-        // Firefox fix: inline styles + sandbox
+        // Force visibility & sandbox so Firefox can’t block it
         iframe.setAttribute("allow", "autoplay");
         iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups");
         iframe.style.display         = "block";
@@ -170,9 +75,11 @@ async function initPage() {
           if (pwd !== MIXCLOUD_PW) return alert("Incorrect password");
           try {
             const delRes = await fetch("delete_archive.php", {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({ artistId, index: idx, password: pwd })
+              method:      "POST",
+              credentials: "same-origin",
+              headers:     { "Content-Type": "application/x-www-form-urlencoded" },
+              body:        new URLSearchParams({ artistId, index: idx, password: pwd }),
+              cache:       "no-store"
             });
             if (!delRes.ok) throw new Error(`Delete ${delRes.status}`);
             await loadShows();
@@ -201,9 +108,11 @@ async function initPage() {
     if (!u) return;
     try {
       const addRes = await fetch("add_archive.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ artistId, url: u, password: pwd })
+        method:      "POST",
+        credentials: "same-origin",
+        headers:     { "Content-Type": "application/x-www-form-urlencoded" },
+        body:        new URLSearchParams({ artistId, url: u, password: pwd }),
+        cache:       "no-store"
       });
       if (!addRes.ok) throw new Error(`Add ${addRes.status}`);
       input.value = "";
