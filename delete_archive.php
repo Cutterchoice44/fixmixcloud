@@ -9,24 +9,33 @@ if ($password !== MIXCLOUD_PASSWORD) {
     exit;
 }
 
+$url = filter_input(INPUT_POST, 'url', FILTER_VALIDATE_URL);
 $index = filter_input(INPUT_POST, 'index', FILTER_VALIDATE_INT);
-$dataFile = __DIR__ . '/archives.json';
+$artistId = filter_input(INPUT_POST, 'artistId', FILTER_SANITIZE_STRING);
+$artistId = $artistId ? preg_replace('/[^a-zA-Z0-9_-]/', '', $artistId) : '';
+$dataFile = __DIR__ . ($artistId ? "/archives_{$artistId}.json" : '/archives.json');
 
-// Load existing archives
 $archives = is_readable($dataFile)
     ? json_decode(file_get_contents($dataFile), true)
     : [];
 
-// Validate index
-if ($index === null || !isset($archives[$index])) {
+// Delete by URL for DJ pages
+if ($artistId && $url) {
+    $archives = array_filter($archives, fn($a) => $a['url'] !== $url);
+}
+// Delete by index for main page
+elseif ($index !== null) {
+    if (!isset($archives[$index])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid index']);
+        exit;
+    }
+    array_splice($archives, $index, 1);
+} else {
     http_response_code(400);
-    echo json_encode(['error' => 'Invalid index']);
+    echo json_encode(['error' => 'Invalid parameters']);
     exit;
 }
 
-// Remove the entry and save
-array_splice($archives, $index, 1);
-file_put_contents($dataFile, json_encode($archives, JSON_PRETTY_PRINT));
-
-// Return updated list
-echo json_encode($archives);
+file_put_contents($dataFile, json_encode(array_values($archives), JSON_PRETTY_PRINT));
+echo json_encode(array_values($archives));
